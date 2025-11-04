@@ -34,3 +34,4 @@ COMMENT ON COLUMN admin_notifications.status IS 'pending, sent, failed';
 COMMENT ON COLUMN admin_notifications.event_type IS 'onboarding_completed, inventory_uploaded, error';
 COMMENT ON COLUMN admin_notifications.payload IS 'JSON con dettagli evento (business_name, file_type, error_message, ecc.)';
 
+

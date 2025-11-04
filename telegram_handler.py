@@ -119,3 +119,4 @@ def setup_telegram_app(token: str) -> Application:
     
     return application
 
+
