@@ -84,7 +84,9 @@ async def format_notification_message(notification: AdminNotification) -> str:
             last_name=user_info.get("last_name"),
             business_name=payload.get("business_name", "N/A"),
             duration_seconds=payload.get("duration_seconds"),
-            correlation_id=notification.correlation_id
+            correlation_id=notification.correlation_id,
+            stage=payload.get("stage"),
+            inventory_pending=payload.get("inventory_pending", False)
         )
     
     elif notification.event_type == "inventory_uploaded":

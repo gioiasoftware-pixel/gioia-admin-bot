@@ -12,7 +12,9 @@ def format_onboarding_completed(
     last_name: Optional[str],
     business_name: str,
     duration_seconds: Optional[int],
-    correlation_id: Optional[str]
+    correlation_id: Optional[str],
+    stage: Optional[str] = None,
+    inventory_pending: Optional[bool] = False
 ) -> str:
     """Formatta messaggio onboarding completato"""
     # Costruisci nome utente
@@ -22,6 +24,14 @@ def format_onboarding_completed(
         user_display = f"{telegram_id} — {' '.join(name_parts)}"
     if username:
         user_display += f" (@{username})"
+    
+    # Determina titolo e stato in base allo stage
+    if stage == "tables_created" and inventory_pending:
+        title = "🎯 **ONBOARDING: TABELLE CREATE**"
+        status = "⏳ In attesa di inventario"
+    else:
+        title = "🎉 **ONBOARDING COMPLETATO**"
+        status = "✅ Completato"
     
     # Formatta durata
     duration_str = "N/A"
@@ -37,13 +47,17 @@ def format_onboarding_completed(
             minutes = (duration_seconds % 3600) // 60
             duration_str = f"{hours}h {minutes}m"
     
-    message = f"""🎉 **ONBOARDING COMPLETATO**
+    message = f"""{title}
 
 👤 Utente: {user_display}
 🏪 Business: {business_name}
-⏱️ Durata: {duration_str}
-🔗 CorrID: {correlation_id or 'N/A'}
-📅 Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"""
+📊 Stato: {status}"""
+    
+    if duration_seconds:
+        message += f"\n⏱️ Durata: {duration_str}"
+    
+    message += f"\n🔗 CorrID: {correlation_id or 'N/A'}"
+    message += f"\n📅 Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
     
     return message
 
@@ -192,4 +206,5 @@ def format_batch_errors(
     message += f"\n📅 Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
     
     return message
+
 
