@@ -5,9 +5,13 @@ import os
 import asyncio
 import logging
 import signal
+from dotenv import load_dotenv
 from db import get_db_pool, close_db_pool, ensure_admin_notifications_table
 from worker import start_worker
 from utils.logging import log_with_context
+
+# Carica variabili d'ambiente da .env (se presente)
+load_dotenv()
 
 # Configurazione logging
 logging.basicConfig(
