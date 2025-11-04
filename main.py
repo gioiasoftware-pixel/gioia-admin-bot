@@ -8,6 +8,7 @@ import signal
 from dotenv import load_dotenv
 from db import get_db_pool, close_db_pool, ensure_admin_notifications_table
 from worker import start_worker
+from telegram_handler import setup_telegram_app
 from utils.logging import log_with_context
 
 # Carica variabili d'ambiente da .env (se presente)
@@ -106,10 +107,22 @@ async def main():
         
         log_with_context("info", "Bot admin avviato e pronto")
         
-        # Avvia worker
+        # Recupera token per Telegram bot
+        admin_bot_token = os.getenv("ADMIN_BOT_TOKEN")
+        
+        # Setup Telegram bot per comandi
+        telegram_app = setup_telegram_app(admin_bot_token)
+        
+        # Avvia polling Telegram in background
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling(drop_pending_updates=True)
+        logger.info("✅ Telegram bot polling avviato")
+        
+        # Avvia worker in background
         worker_task = asyncio.create_task(start_worker())
         
-        # Attendi shutdown o errore worker
+        # Attendi shutdown o errore
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -117,6 +130,12 @@ async def main():
         except Exception as e:
             logger.error(f"Errore nel worker: {e}")
             raise
+        finally:
+            # Stop Telegram bot
+            await telegram_app.updater.stop()
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+            logger.info("✅ Telegram bot fermato")
         
     except KeyboardInterrupt:
         logger.info("Interruzione da utente")
