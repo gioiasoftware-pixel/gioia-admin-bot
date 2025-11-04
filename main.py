@@ -10,15 +10,13 @@ from db import get_db_pool, close_db_pool, ensure_admin_notifications_table
 from worker import start_worker
 from telegram_handler import setup_telegram_app
 from utils.logging import log_with_context
+from logging_config import setup_colored_logging
 
 # Carica variabili d'ambiente da .env (se presente)
 load_dotenv()
 
-# Configurazione logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configurazione logging colorato
+setup_colored_logging("admin-bot")
 logger = logging.getLogger(__name__)
 
 # Flag per graceful shutdown
