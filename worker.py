@@ -4,6 +4,7 @@ Worker per leggere e processare notifiche admin dalla coda
 import os
 import asyncio
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import List, Optional
 from db import get_db_pool
@@ -61,6 +62,19 @@ async def format_notification_message(notification: AdminNotification) -> str:
     """Formatta messaggio notifica in base al tipo evento"""
     user_info = await get_user_info(notification.telegram_id)
     payload = notification.payload
+    
+    # Safety check: assicura che payload sia sempre un dict
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Payload non parsabile per notifica {notification.id}: {payload}")
+            payload = {}
+    elif payload is None:
+        payload = {}
+    elif not isinstance(payload, dict):
+        logger.warning(f"Payload non è dict per notifica {notification.id}: {type(payload)}")
+        payload = {}
     
     if notification.event_type == "onboarding_completed":
         return format_onboarding_completed(
