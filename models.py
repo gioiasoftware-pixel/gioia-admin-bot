@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
 import uuid
+import json
 
 
 @dataclass
@@ -23,6 +24,17 @@ class AdminNotification:
     @classmethod
     def from_row(cls, row) -> 'AdminNotification':
         """Crea AdminNotification da row database"""
+        # Parse payload se è una stringa (asyncpg può restituire JSONB come stringa)
+        payload = row['payload']
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                # Se non è JSON valido, usa dict vuoto
+                payload = {}
+        elif payload is None:
+            payload = {}
+        
         return cls(
             id=row['id'],
             created_at=row['created_at'],
@@ -30,7 +42,7 @@ class AdminNotification:
             event_type=row['event_type'],
             telegram_id=row['telegram_id'],
             correlation_id=row.get('correlation_id'),
-            payload=row['payload'],
+            payload=payload,
             retry_count=row.get('retry_count', 0),
             next_attempt_at=row['next_attempt_at']
         )
