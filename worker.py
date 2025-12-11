@@ -136,7 +136,12 @@ async def process_notification(notification: AdminNotification, rate_limiter: Ra
     try:
         # Verifica rate limit globale
         if not rate_limiter.can_send_globally():
-            logger.warning(f"Rate limit globale raggiunto, notifica {notification.id} in attesa")
+            # Log solo ogni 10 notifiche per evitare spam di log
+            if notification.retry_count % 10 == 0:
+                logger.debug(
+                    f"Rate limit globale raggiunto ({rate_limiter.global_limit_per_min}/min), "
+                    f"notifica {notification.id} in attesa (retry: {notification.retry_count})"
+                )
             return False
         
         # Per errori, verifica anti-spam per utente
