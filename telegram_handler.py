@@ -389,25 +389,25 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[ADMIN_REPORT] URL chiamato: {url}")
         logger.error(f"[ADMIN_REPORT] PROCESSOR_API_URL: {PROCESSOR_API_URL}")
         
-        # Messaggio più dettagliato per 404
+        # Messaggio più dettagliato per 404 (senza Markdown complesso per evitare errori parsing)
         if e.response.status_code == 404:
             detail_msg = (
-                f"❌ **Endpoint non trovato (404)**\n\n"
-                f"L'endpoint `/admin/trigger-daily-report` non è stato trovato.\n\n"
-                f"**Possibili cause:**\n"
-                f"• Il deploy del processor non è ancora completato\n"
-                f"• L'URL del processor non è corretto\n"
-                f"• L'endpoint non è stato deployato\n\n"
-                f"**URL chiamato:**\n`{url}`\n\n"
-                f"**Verifica:**\n"
-                f"• Che il processor sia deployato su Railway\n"
-                f"• Che la variabile PROCESSOR_URL sia corretta\n"
-                f"• Che l'endpoint esista nel codice del processor"
+                "❌ Endpoint non trovato (404)\n\n"
+                "L'endpoint /admin/trigger-daily-report non è stato trovato.\n\n"
+                "Possibili cause:\n"
+                "• Il deploy del processor non è ancora completato\n"
+                "• L'URL del processor non è corretto\n"
+                "• L'endpoint non è stato deployato\n\n"
+                f"URL chiamato: {url}\n\n"
+                "Verifica:\n"
+                "• Che il processor sia deployato su Railway\n"
+                "• Che la variabile PROCESSOR_URL sia corretta\n"
+                "• Che l'endpoint esista nel codice del processor"
             )
         else:
-            detail_msg = f"❌ **Errore durante l'invio**\n\nErrore: {error_msg}"
+            detail_msg = f"❌ Errore durante l'invio\n\nErrore: {error_msg}"
         
-        await update.message.reply_text(detail_msg, parse_mode='Markdown')
+        await update.message.reply_text(detail_msg)
     except Exception as e:
         logger.error(f"Errore comando /report: {e}", exc_info=True)
         await update.message.reply_text(
