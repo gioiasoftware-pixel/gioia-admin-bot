@@ -273,12 +273,26 @@ async def worker_loop(rate_limiter: RateLimiter):
                 logger.info(f"Trovate {len(notifications)} notifiche pending")
                 
                 # Processa ogni notifica
+                processed_count = 0
+                skipped_count = 0
+                
                 for notification in notifications:
                     try:
-                        await process_notification(notification, rate_limiter)
+                        result = await process_notification(notification, rate_limiter)
+                        if result:
+                            processed_count += 1
+                        else:
+                            skipped_count += 1
                     except Exception as e:
                         logger.error(f"Errore processamento notifica {notification.id}: {e}", exc_info=True)
+                        skipped_count += 1
                         continue
+                
+                if skipped_count > 0:
+                    logger.debug(
+                        f"Batch completato: {processed_count} processate, {skipped_count} saltate "
+                        f"(rate limit o anti-spam)"
+                    )
             else:
                 # Nessuna notifica - attesa breve
                 await asyncio.sleep(POLLING_INTERVAL)
@@ -304,8 +318,13 @@ async def start_worker():
         return
     
     # Inizializza rate limiter
-    rate_limit_per_min = int(os.getenv("ADMIN_NOTIFY_RATE_LIMIT_PER_MIN", 20))
+    rate_limit_per_min = int(os.getenv("ADMIN_NOTIFY_RATE_LIMIT_PER_MIN", 30))  # Aumentato default da 20 a 30
     min_error_interval = int(os.getenv("ADMIN_NOTIFY_MIN_ERROR_INTERVAL_SEC", 180))
+    
+    logger.info(
+        f"Rate limiter configurato: {rate_limit_per_min} notifiche/minuto, "
+        f"{min_error_interval}s intervallo minimo errori"
+    )
     
     rate_limiter = RateLimiter(
         global_limit_per_min=rate_limit_per_min,
