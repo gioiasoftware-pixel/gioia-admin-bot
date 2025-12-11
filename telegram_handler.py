@@ -212,8 +212,9 @@ async def user_id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Estrai messaggio
-    if not context.args:
+    # Estrai messaggio (tutto dopo il comando)
+    message_parts = update.message.text.split(maxsplit=1)
+    if len(message_parts) < 2:
         await update.message.reply_text(
             f"📨 **Invio Messaggio a Utente**\n\n"
             f"ID: `{telegram_id}`\n\n"
@@ -223,7 +224,7 @@ async def user_id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    message_text = " ".join(context.args)
+    message_text = message_parts[1]  # Tutto dopo il comando
     
     if not message_text.strip():
         await update.message.reply_text(f"❌ Messaggio vuoto. Usa: `/{telegram_id} <messaggio>`", parse_mode='Markdown')
@@ -329,15 +330,27 @@ def setup_telegram_app(bot_token: str) -> Application:
     app.add_handler(CommandHandler("start", start_admin_cmd))
     app.add_handler(CommandHandler("all", all_cmd))
     
-    # Handler per comandi numerici (telegram_id) - cattura messaggi che iniziano con / seguito da numero
+    # Handler per comandi numerici (telegram_id) - cattura messaggi che iniziano con / seguito da solo numeri
     async def handle_numeric_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Gestisce comandi numerici come /927230913"""
-        # Verifica che sia un comando numerico
-        command_text = update.message.text.split()[0] if update.message.text else ""
-        if command_text.startswith('/') and command_text[1:].isdigit():
-            await user_id_cmd(update, context)
+        if not update.message or not update.message.text:
+            return
+        
+        # Estrai comando (prima parola)
+        parts = update.message.text.split(maxsplit=1)
+        command_text = parts[0]
+        
+        # Verifica che sia un comando numerico (es. /927230913)
+        if command_text.startswith('/') and len(command_text) > 1:
+            telegram_id_str = command_text[1:]  # Rimuovi /
+            if telegram_id_str.isdigit():
+                await user_id_cmd(update, context)
     
-    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/\d+'), handle_numeric_command))
+    # Cattura messaggi che iniziano con / seguito da solo numeri (non lettere)
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex(r'^/\d+(\s|$)'), 
+        handle_numeric_command
+    ))
     
     logger.info("✅ Telegram bot configurato con comandi /all e /<telegram_id>")
     
