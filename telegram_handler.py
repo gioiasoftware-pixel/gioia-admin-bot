@@ -15,7 +15,17 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # URL del processor per chiamate API (usa PROCESSOR_URL se disponibile, altrimenti default)
-PROCESSOR_API_URL = os.getenv("PROCESSOR_URL") or os.getenv("PROCESSOR_API_URL", "https://gioia-processor-production.up.railway.app")
+def _normalize_processor_url(url: str) -> str:
+    """Normalizza URL aggiungendo https:// se manca il protocollo"""
+    if not url:
+        return "https://gioia-processor-production.up.railway.app"
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url
+
+_processor_url_raw = os.getenv("PROCESSOR_URL") or os.getenv("PROCESSOR_API_URL", "https://gioia-processor-production.up.railway.app")
+PROCESSOR_API_URL = _normalize_processor_url(_processor_url_raw)
 
 
 async def get_all_users() -> List[Dict[str, Any]]:
