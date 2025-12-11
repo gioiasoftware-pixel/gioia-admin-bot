@@ -350,8 +350,14 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if report_date:
             payload["report_date"] = report_date
         
+        logger.info(f"[ADMIN_REPORT] Chiamata endpoint: {url}")
+        logger.info(f"[ADMIN_REPORT] Payload: {payload}")
+        logger.info(f"[ADMIN_REPORT] PROCESSOR_API_URL configurato: {PROCESSOR_API_URL}")
+        
         async with httpx.AsyncClient(timeout=300.0) as client:  # Timeout 5 minuti
             response = await client.post(url, json=payload)
+            logger.info(f"[ADMIN_REPORT] Response status: {response.status_code}")
+            logger.info(f"[ADMIN_REPORT] Response text: {response.text[:500]}")
             response.raise_for_status()
             result = response.json()
         
@@ -377,12 +383,31 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(report_text, parse_mode='Markdown')
     
     except httpx.HTTPStatusError as e:
-        error_msg = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
-        logger.error(f"Errore comando /report: {error_msg}")
-        await update.message.reply_text(
-            f"❌ **Errore durante l'invio**\n\n"
-            f"Errore: {error_msg}"
-        )
+        error_text = e.response.text[:500] if e.response.text else "Nessun dettaglio disponibile"
+        error_msg = f"HTTP {e.response.status_code}: {error_text}"
+        logger.error(f"[ADMIN_REPORT] Errore HTTP comando /report: {error_msg}")
+        logger.error(f"[ADMIN_REPORT] URL chiamato: {url}")
+        logger.error(f"[ADMIN_REPORT] PROCESSOR_API_URL: {PROCESSOR_API_URL}")
+        
+        # Messaggio più dettagliato per 404
+        if e.response.status_code == 404:
+            detail_msg = (
+                f"❌ **Endpoint non trovato (404)**\n\n"
+                f"L'endpoint `/admin/trigger-daily-report` non è stato trovato.\n\n"
+                f"**Possibili cause:**\n"
+                f"• Il deploy del processor non è ancora completato\n"
+                f"• L'URL del processor non è corretto\n"
+                f"• L'endpoint non è stato deployato\n\n"
+                f"**URL chiamato:**\n`{url}`\n\n"
+                f"**Verifica:**\n"
+                f"• Che il processor sia deployato su Railway\n"
+                f"• Che la variabile PROCESSOR_URL sia corretta\n"
+                f"• Che l'endpoint esista nel codice del processor"
+            )
+        else:
+            detail_msg = f"❌ **Errore durante l'invio**\n\nErrore: {error_msg}"
+        
+        await update.message.reply_text(detail_msg, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Errore comando /report: {e}", exc_info=True)
         await update.message.reply_text(
