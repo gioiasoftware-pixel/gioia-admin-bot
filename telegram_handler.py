@@ -341,6 +341,22 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     try:
+        # Normalizza formato data se fornita (supporta DD/MM/YY o YYYY-MM-DD)
+        if report_date:
+            # Prova a convertire formato DD/MM/YY a YYYY-MM-DD
+            try:
+                if "/" in report_date:
+                    parts = report_date.split("/")
+                    if len(parts) == 3:
+                        day, month, year = parts
+                        # Se anno è 2 cifre, assume 20XX
+                        if len(year) == 2:
+                            year = f"20{year}"
+                        report_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+            except Exception as date_error:
+                logger.warning(f"[ADMIN_REPORT] Errore parsing data {report_date}: {date_error}")
+                # Continua con formato originale, il server lo gestirà
+        
         # Chiama endpoint processor
         url = f"{PROCESSOR_API_URL}/admin/trigger-daily-report"
         payload = {}
