@@ -14,7 +14,31 @@ Il **Gioia Admin Bot** è un bot Telegram privato dedicato all'amministratore pe
 
 ## 📊 Funzionalità Principali
 
-### **1. Notifiche di Onboarding Completato** 🎉
+### **1. Comandi Admin** 🤖
+
+Il bot supporta comandi per operazioni amministrative:
+
+#### **Invio Messaggi:**
+- `/all <messaggio>` - Invia messaggio a tutti gli utenti con onboarding completato
+- `/<telegram_id> <messaggio>` - Invia messaggio a un utente specifico
+
+#### **Report Giornaliero:**
+- `/report` - Invia report consumi/rifornimenti a tutti gli utenti (data: ieri)
+- `/report <telegram_id>` - Invia report a un utente specifico (data: ieri)
+- `/report <telegram_id> <data>` - Invia report a un utente per una data specifica (formato: YYYY-MM-DD)
+
+**Esempi:**
+```
+/report
+/report 927230913
+/report 927230913 2025-12-10
+```
+
+**Nota:** Il comando `/report` è utile per testare il report giornaliero senza aspettare le 10 del mattino.
+
+---
+
+### **2. Notifiche di Onboarding Completato** 🎉
 
 Quando un nuovo utente completa l'onboarding:
 
@@ -41,7 +65,7 @@ Quando un nuovo utente completa l'onboarding:
 
 ---
 
-### **2. Notifiche di Inventario Caricato** 📦
+### **3. Notifiche di Inventario Caricato** 📦
 
 Quando un utente carica un inventario:
 
@@ -70,7 +94,7 @@ Quando un utente carica un inventario:
 
 ---
 
-### **3. Notifiche di Errori** 🚨
+### **4. Notifiche di Errori** 🚨
 
 Quando si verifica un errore che viene mostrato all'utente:
 
@@ -221,6 +245,9 @@ ADMIN_CHAT_ID=987654321
 
 # Token bot Telegram principale (per inviare messaggi agli utenti)
 TELEGRAM_BOT_TOKEN=your_telegram_ai_bot_token_here
+
+# URL API del processor (per chiamate admin, opzionale)
+PROCESSOR_API_URL=https://gioia-processor-production.up.railway.app
 
 # Database condiviso
 DATABASE_URL=postgresql://user:pass@host:port/db
