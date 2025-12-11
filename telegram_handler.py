@@ -340,13 +340,13 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"⏳ **Invio report in corso...**\n\n"
             f"👤 **Utente:**\n{user_info}\n"
-            f"📅 **Data:** {report_date or 'Ieri (default)'}\n\n"
+            f"📅 **Data:** {report_date or 'Oggi (default)'}\n\n"
             f"Attendere..."
         )
     else:
         await update.message.reply_text(
             f"⏳ **Invio report a tutti gli utenti...**\n\n"
-            f"📅 **Data:** {report_date or 'Ieri (default)'}\n\n"
+            f"📅 **Data:** {report_date or 'Oggi (default)'}\n\n"
             f"Attendere..."
         )
     
