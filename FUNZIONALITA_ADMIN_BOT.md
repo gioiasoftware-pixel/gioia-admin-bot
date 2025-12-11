@@ -247,6 +247,9 @@ ADMIN_CHAT_ID=987654321
 TELEGRAM_BOT_TOKEN=your_telegram_ai_bot_token_here
 
 # URL API del processor (per chiamate admin, opzionale)
+# Supporta sia PROCESSOR_URL che PROCESSOR_API_URL
+PROCESSOR_URL=https://processor.railway.app
+# oppure
 PROCESSOR_API_URL=https://gioia-processor-production.up.railway.app
 
 # Database condiviso

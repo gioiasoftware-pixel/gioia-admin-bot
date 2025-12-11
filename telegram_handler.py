@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 # Token del telegram-ai-bot per inviare messaggi agli utenti
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# URL del processor per chiamate API
-PROCESSOR_API_URL = os.getenv("PROCESSOR_API_URL", "https://gioia-processor-production.up.railway.app")
+# URL del processor per chiamate API (usa PROCESSOR_URL se disponibile, altrimenti default)
+PROCESSOR_API_URL = os.getenv("PROCESSOR_URL") or os.getenv("PROCESSOR_API_URL", "https://gioia-processor-production.up.railway.app")
 
 
 async def get_all_users() -> List[Dict[str, Any]]:
