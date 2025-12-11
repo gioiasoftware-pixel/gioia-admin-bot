@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 # Token del telegram-ai-bot per inviare messaggi agli utenti
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+# URL del processor per chiamate API
+PROCESSOR_API_URL = os.getenv("PROCESSOR_API_URL", "https://gioia-processor-production.up.railway.app")
+
 
 async def get_all_users() -> List[Dict[str, Any]]:
     """Recupera tutti gli utenti dal database"""
@@ -284,6 +287,110 @@ async def user_id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /report - invia report giornaliero manualmente"""
+    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
+    
+    # Verifica che il comando venga da admin
+    if str(update.effective_user.id) != str(admin_chat_id):
+        await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
+        return
+    
+    # Estrai parametri (telegram_id opzionale, report_date opzionale)
+    args = context.args if context.args else []
+    
+    telegram_id = None
+    report_date = None
+    
+    if len(args) > 0:
+        # Primo argomento: telegram_id o data
+        first_arg = args[0]
+        if first_arg.isdigit():
+            telegram_id = int(first_arg)
+            if len(args) > 1:
+                report_date = args[1]  # Secondo argomento: data
+        else:
+            # Primo argomento è una data (formato YYYY-MM-DD)
+            report_date = first_arg
+    
+    # Mostra info prima di inviare
+    if telegram_id:
+        user = await get_user_by_telegram_id(telegram_id)
+        if not user:
+            await update.message.reply_text(
+                f"❌ **Utente non trovato**\n\n"
+                f"ID Telegram `{telegram_id}` non esiste nel database."
+            )
+            return
+        
+        user_info = f"ID: {telegram_id}"
+        if user.get("business_name"):
+            user_info += f"\nBusiness: {user['business_name']}"
+        
+        await update.message.reply_text(
+            f"⏳ **Invio report in corso...**\n\n"
+            f"👤 **Utente:**\n{user_info}\n"
+            f"📅 **Data:** {report_date or 'Ieri (default)'}\n\n"
+            f"Attendere..."
+        )
+    else:
+        await update.message.reply_text(
+            f"⏳ **Invio report a tutti gli utenti...**\n\n"
+            f"📅 **Data:** {report_date or 'Ieri (default)'}\n\n"
+            f"Attendere..."
+        )
+    
+    try:
+        # Chiama endpoint processor
+        url = f"{PROCESSOR_API_URL}/admin/trigger-daily-report"
+        payload = {}
+        
+        if telegram_id:
+            payload["telegram_id"] = telegram_id
+        if report_date:
+            payload["report_date"] = report_date
+        
+        async with httpx.AsyncClient(timeout=300.0) as client:  # Timeout 5 minuti
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
+        
+        # Report risultato
+        report_text = (
+            f"✅ **Report Inviato**\n\n"
+            f"📅 **Data:** {result.get('report_date', 'N/A')}\n"
+            f"👤 **Utente:** {result.get('telegram_id', 'Tutti')}\n\n"
+            f"📊 **Statistiche:**\n"
+            f"• ✅ Inviati: {result.get('sent_count', 0)}\n"
+            f"• ⏭️ Saltati: {result.get('skipped_count', 0)}\n"
+            f"• ❌ Errori: {result.get('error_count', 0)}\n"
+        )
+        
+        errors = result.get('errors', [])
+        if errors:
+            report_text += f"\n**Errori:**\n"
+            for error in errors[:5]:  # Max 5 errori
+                report_text += f"• {error[:100]}\n"
+            if len(errors) > 5:
+                report_text += f"\n... e altri {len(errors) - 5} errori"
+        
+        await update.message.reply_text(report_text, parse_mode='Markdown')
+    
+    except httpx.HTTPStatusError as e:
+        error_msg = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+        logger.error(f"Errore comando /report: {error_msg}")
+        await update.message.reply_text(
+            f"❌ **Errore durante l'invio**\n\n"
+            f"Errore: {error_msg}"
+        )
+    except Exception as e:
+        logger.error(f"Errore comando /report: {e}", exc_info=True)
+        await update.message.reply_text(
+            f"❌ **Errore durante l'invio**\n\n"
+            f"Errore: {str(e)[:200]}"
+        )
+
+
 async def start_admin_cmd(update, context):
     """Comando /start per l'admin bot."""
     admin_chat_id = os.getenv("ADMIN_CHAT_ID")
@@ -299,9 +406,16 @@ async def start_admin_cmd(update, context):
         "📢 **Invio Messaggi:**\n"
         "• `/all <messaggio>` - Invia messaggio a tutti gli utenti\n"
         "• `/<telegram_id> <messaggio>` - Invia messaggio a un utente specifico\n\n"
+        "📊 **Report Giornaliero:**\n"
+        "• `/report` - Invia report a tutti gli utenti (data: ieri)\n"
+        "• `/report <telegram_id>` - Invia report a un utente specifico (data: ieri)\n"
+        "• `/report <telegram_id> <data>` - Invia report a un utente per una data (formato: YYYY-MM-DD)\n\n"
         "**Esempi:**\n"
         "• `/all Ciao a tutti! Questo è un messaggio di test.`\n"
-        "• `/927230913 Ciao! Questo è un messaggio per te.`\n\n"
+        "• `/927230913 Ciao! Questo è un messaggio per te.`\n"
+        "• `/report` - Report a tutti per ieri\n"
+        "• `/report 927230913` - Report a utente specifico per ieri\n"
+        "• `/report 927230913 2025-12-10` - Report a utente per data specifica\n\n"
         "💡 Riceverai qui le notifiche automatiche del sistema."
     )
     
@@ -329,6 +443,7 @@ def setup_telegram_app(bot_token: str) -> Application:
     # Aggiungi handler per comandi
     app.add_handler(CommandHandler("start", start_admin_cmd))
     app.add_handler(CommandHandler("all", all_cmd))
+    app.add_handler(CommandHandler("report", report_cmd))
     
     # Handler per comandi numerici (telegram_id) - cattura messaggi che iniziano con / seguito da solo numeri
     async def handle_numeric_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
