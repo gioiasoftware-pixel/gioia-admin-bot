@@ -1,70 +1,15 @@
 """
-Logica invio messaggi Telegram per notifiche admin
+Notificatore Telegram per admin bot con retry automatico
 """
 import os
 import logging
 import httpx
 from typing import Optional, Dict, Any
 from utils.logging import log_with_context
+from utils.backoff import calculate_backoff
+import asyncio
 
 logger = logging.getLogger(__name__)
-
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-
-
-async def send_notification(message: str, parse_mode: str = "Markdown") -> bool:
-    """
-    Invia messaggio Telegram all'admin.
-    
-    Returns:
-        True se invio riuscito, False altrimenti
-    """
-    if not ADMIN_BOT_TOKEN or not ADMIN_CHAT_ID:
-        logger.error("ADMIN_BOT_TOKEN o ADMIN_CHAT_ID non configurati")
-        return False
-    
-    try:
-        url = f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage"
-        
-        payload = {
-            "chat_id": int(ADMIN_CHAT_ID),
-            "text": message,
-            "parse_mode": parse_mode
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            
-            result = response.json()
-            if result.get("ok"):
-                logger.info("Notifica inviata con successo")
-                return True
-            else:
-                logger.error(f"Errore Telegram API: {result.get('description')}")
-                return False
-                
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            # Rate limit - sarà gestito da retry con backoff
-            logger.warning(f"Rate limit Telegram (429): {e.response.text}")
-            raise  # Rilancia per gestione retry
-        elif e.response.status_code == 400:
-            # Bad request - non retry
-            logger.error(f"Bad request Telegram (400): {e.response.text}")
-            return False
-        elif e.response.status_code == 401:
-            # Unauthorized - token invalido, ferma bot
-            logger.critical(f"Token Telegram invalido (401): {e.response.text}")
-            raise
-        else:
-            logger.error(f"Errore HTTP Telegram: {e.response.status_code} - {e.response.text}")
-            raise  # Rilancia per retry
-    
-    except Exception as e:
-        logger.error(f"Errore invio notifica Telegram: {e}")
-        raise  # Rilancia per retry
 
 
 async def send_notification_with_retry(
@@ -74,547 +19,168 @@ async def send_notification_with_retry(
     max_retries: int = 10
 ) -> Dict[str, Any]:
     """
-    Invia notifica con gestione retry automatica.
+    Invia messaggio Telegram all'admin con retry automatico.
+    
+    Args:
+        message: Testo del messaggio da inviare
+        notification_id: ID notifica per logging
+        correlation_id: ID correlazione per tracciamento
+        max_retries: Numero massimo tentativi
     
     Returns:
-        Dict con status: 'sent' o 'failed', retry_count, error se presente
+        Dict con:
+            - status: "sent" o "error"
+            - error: Messaggio errore (se status="error")
     """
-    from utils.backoff import calculate_backoff
+    admin_bot_token = os.getenv("ADMIN_BOT_TOKEN")
+    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
     
-    retry_count = 0
-    last_error = None
+    if not admin_bot_token:
+        error_msg = "ADMIN_BOT_TOKEN non configurato"
+        logger.error(error_msg)
+        return {"status": "error", "error": error_msg}
     
-    while retry_count < max_retries:
-        try:
-            success = await send_notification(message)
-            
-            if success:
-                log_with_context(
-                    "info",
-                    f"Notifica {notification_id} inviata con successo",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count
-                )
-                return {
-                    "status": "sent",
-                    "retry_count": retry_count,
-                    "error": None
-                }
-            
-            # Se send_notification ritorna False (non retry), esci
-            return {
-                "status": "failed",
-                "retry_count": retry_count,
-                "error": "Telegram API returned ok=false"
-            }
-            
-        except Exception as e:
-            last_error = str(e)
-            retry_count += 1
-            
-            if retry_count >= max_retries:
-                log_with_context(
-                    "error",
-                    f"Notifica {notification_id} fallita dopo {max_retries} tentativi",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count,
-                    error=last_error
-                )
-                return {
-                    "status": "failed",
-                    "retry_count": retry_count,
-                    "error": last_error
-                }
-            
-            # Calcola backoff
-            backoff_seconds = calculate_backoff(retry_count)
-            
-            log_with_context(
-                "warning",
-                f"Retry {retry_count}/{max_retries} per notifica {notification_id} tra {backoff_seconds}s",
-                correlation_id=correlation_id,
-                notification_id=notification_id,
-                retry_count=retry_count,
-                backoff_seconds=backoff_seconds,
-                error=last_error
-            )
-            
-            # Attendi backoff (sarà gestito dal worker con next_attempt_at)
-            # Qui non aspettiamo, il worker gestirà il timing
-            raise  # Rilancia per gestione nel worker
+    if not admin_chat_id:
+        error_msg = "ADMIN_CHAT_ID non configurato"
+        logger.error(error_msg)
+        return {"status": "error", "error": error_msg}
     
-    return {
-        "status": "failed",
-        "retry_count": retry_count,
-        "error": last_error or "Max retries reached"
+    url = f"https://api.telegram.org/bot{admin_bot_token}/sendMessage"
+    
+    payload = {
+        "chat_id": admin_chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
     }
-
-
-
-Logica invio messaggi Telegram per notifiche admin
-"""
-import os
-import logging
-import httpx
-from typing import Optional, Dict, Any
-from utils.logging import log_with_context
-
-logger = logging.getLogger(__name__)
-
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-
-
-async def send_notification(message: str, parse_mode: str = "Markdown") -> bool:
-    """
-    Invia messaggio Telegram all'admin.
     
-    Returns:
-        True se invio riuscito, False altrimenti
-    """
-    if not ADMIN_BOT_TOKEN or not ADMIN_CHAT_ID:
-        logger.error("ADMIN_BOT_TOKEN o ADMIN_CHAT_ID non configurati")
-        return False
-    
-    try:
-        url = f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage"
-        
-        payload = {
-            "chat_id": int(ADMIN_CHAT_ID),
-            "text": message,
-            "parse_mode": parse_mode
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            
-            result = response.json()
-            if result.get("ok"):
-                logger.info("Notifica inviata con successo")
-                return True
-            else:
-                logger.error(f"Errore Telegram API: {result.get('description')}")
-                return False
+    # Retry loop
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
                 
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            # Rate limit - sarà gestito da retry con backoff
-            logger.warning(f"Rate limit Telegram (429): {e.response.text}")
-            raise  # Rilancia per gestione retry
-        elif e.response.status_code == 400:
-            # Bad request - non retry
-            logger.error(f"Bad request Telegram (400): {e.response.text}")
-            return False
-        elif e.response.status_code == 401:
-            # Unauthorized - token invalido, ferma bot
-            logger.critical(f"Token Telegram invalido (401): {e.response.text}")
-            raise
-        else:
-            logger.error(f"Errore HTTP Telegram: {e.response.status_code} - {e.response.text}")
-            raise  # Rilancia per retry
-    
-    except Exception as e:
-        logger.error(f"Errore invio notifica Telegram: {e}")
-        raise  # Rilancia per retry
-
-
-async def send_notification_with_retry(
-    message: str,
-    notification_id: str,
-    correlation_id: Optional[str] = None,
-    max_retries: int = 10
-) -> Dict[str, Any]:
-    """
-    Invia notifica con gestione retry automatica.
-    
-    Returns:
-        Dict con status: 'sent' o 'failed', retry_count, error se presente
-    """
-    from utils.backoff import calculate_backoff
-    
-    retry_count = 0
-    last_error = None
-    
-    while retry_count < max_retries:
-        try:
-            success = await send_notification(message)
-            
-            if success:
-                log_with_context(
-                    "info",
-                    f"Notifica {notification_id} inviata con successo",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count
-                )
-                return {
-                    "status": "sent",
-                    "retry_count": retry_count,
-                    "error": None
-                }
-            
-            # Se send_notification ritorna False (non retry), esci
-            return {
-                "status": "failed",
-                "retry_count": retry_count,
-                "error": "Telegram API returned ok=false"
-            }
-            
-        except Exception as e:
-            last_error = str(e)
-            retry_count += 1
-            
-            if retry_count >= max_retries:
-                log_with_context(
-                    "error",
-                    f"Notifica {notification_id} fallita dopo {max_retries} tentativi",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count,
-                    error=last_error
-                )
-                return {
-                    "status": "failed",
-                    "retry_count": retry_count,
-                    "error": last_error
-                }
-            
-            # Calcola backoff
-            backoff_seconds = calculate_backoff(retry_count)
-            
-            log_with_context(
-                "warning",
-                f"Retry {retry_count}/{max_retries} per notifica {notification_id} tra {backoff_seconds}s",
-                correlation_id=correlation_id,
-                notification_id=notification_id,
-                retry_count=retry_count,
-                backoff_seconds=backoff_seconds,
-                error=last_error
-            )
-            
-            # Attendi backoff (sarà gestito dal worker con next_attempt_at)
-            # Qui non aspettiamo, il worker gestirà il timing
-            raise  # Rilancia per gestione nel worker
-    
-    return {
-        "status": "failed",
-        "retry_count": retry_count,
-        "error": last_error or "Max retries reached"
-    }
-
-
-"""
-Logica invio messaggi Telegram per notifiche admin
-"""
-import os
-import logging
-import httpx
-from typing import Optional, Dict, Any
-from utils.logging import log_with_context
-
-logger = logging.getLogger(__name__)
-
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-
-
-async def send_notification(message: str, parse_mode: str = "Markdown") -> bool:
-    """
-    Invia messaggio Telegram all'admin.
-    
-    Returns:
-        True se invio riuscito, False altrimenti
-    """
-    if not ADMIN_BOT_TOKEN or not ADMIN_CHAT_ID:
-        logger.error("ADMIN_BOT_TOKEN o ADMIN_CHAT_ID non configurati")
-        return False
-    
-    try:
-        url = f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage"
-        
-        payload = {
-            "chat_id": int(ADMIN_CHAT_ID),
-            "text": message,
-            "parse_mode": parse_mode
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            
-            result = response.json()
-            if result.get("ok"):
-                logger.info("Notifica inviata con successo")
-                return True
-            else:
-                logger.error(f"Errore Telegram API: {result.get('description')}")
-                return False
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get("ok"):
+                        log_with_context(
+                            "info",
+                            f"Notifica {notification_id} inviata con successo",
+                            correlation_id=correlation_id,
+                            notification_id=notification_id,
+                            attempt=attempt + 1
+                        )
+                        return {"status": "sent"}
+                    else:
+                        error_desc = result.get("description", "Unknown error")
+                        
+                        # Gestione errori specifici Telegram
+                        if "429" in error_desc or response.status_code == 429:
+                            # Rate limit - retry con backoff
+                            if attempt < max_retries:
+                                backoff_seconds = calculate_backoff(attempt, base=10)
+                                logger.warning(
+                                    f"Rate limit Telegram per notifica {notification_id}, "
+                                    f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(backoff_seconds)
+                                continue
+                        
+                        elif "400" in error_desc or response.status_code == 400:
+                            # Bad request - non retry
+                            error_msg = f"Bad request Telegram: {error_desc}"
+                            logger.error(
+                                f"Errore Telegram per notifica {notification_id}: {error_msg}",
+                                correlation_id=correlation_id
+                            )
+                            return {"status": "error", "error": error_msg}
+                        
+                        elif "401" in error_desc or response.status_code == 401:
+                            # Unauthorized - errore critico
+                            error_msg = f"Token Telegram invalido: {error_desc}"
+                            logger.critical(
+                                f"Errore critico Telegram per notifica {notification_id}: {error_msg}",
+                                correlation_id=correlation_id
+                            )
+                            return {"status": "error", "error": error_msg}
+                        
+                        else:
+                            # Altri errori - retry
+                            if attempt < max_retries:
+                                backoff_seconds = calculate_backoff(attempt, base=10)
+                                logger.warning(
+                                    f"Errore Telegram per notifica {notification_id}: {error_desc}, "
+                                    f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(backoff_seconds)
+                                continue
+                            else:
+                                error_msg = f"Telegram API error: {error_desc}"
+                                return {"status": "error", "error": error_msg}
                 
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            # Rate limit - sarà gestito da retry con backoff
-            logger.warning(f"Rate limit Telegram (429): {e.response.text}")
-            raise  # Rilancia per gestione retry
-        elif e.response.status_code == 400:
-            # Bad request - non retry
-            logger.error(f"Bad request Telegram (400): {e.response.text}")
-            return False
-        elif e.response.status_code == 401:
-            # Unauthorized - token invalido, ferma bot
-            logger.critical(f"Token Telegram invalido (401): {e.response.text}")
-            raise
-        else:
-            logger.error(f"Errore HTTP Telegram: {e.response.status_code} - {e.response.text}")
-            raise  # Rilancia per retry
-    
-    except Exception as e:
-        logger.error(f"Errore invio notifica Telegram: {e}")
-        raise  # Rilancia per retry
-
-
-async def send_notification_with_retry(
-    message: str,
-    notification_id: str,
-    correlation_id: Optional[str] = None,
-    max_retries: int = 10
-) -> Dict[str, Any]:
-    """
-    Invia notifica con gestione retry automatica.
-    
-    Returns:
-        Dict con status: 'sent' o 'failed', retry_count, error se presente
-    """
-    from utils.backoff import calculate_backoff
-    
-    retry_count = 0
-    last_error = None
-    
-    while retry_count < max_retries:
-        try:
-            success = await send_notification(message)
-            
-            if success:
-                log_with_context(
-                    "info",
-                    f"Notifica {notification_id} inviata con successo",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count
-                )
-                return {
-                    "status": "sent",
-                    "retry_count": retry_count,
-                    "error": None
-                }
-            
-            # Se send_notification ritorna False (non retry), esci
-            return {
-                "status": "failed",
-                "retry_count": retry_count,
-                "error": "Telegram API returned ok=false"
-            }
-            
-        except Exception as e:
-            last_error = str(e)
-            retry_count += 1
-            
-            if retry_count >= max_retries:
-                log_with_context(
-                    "error",
-                    f"Notifica {notification_id} fallita dopo {max_retries} tentativi",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count,
-                    error=last_error
-                )
-                return {
-                    "status": "failed",
-                    "retry_count": retry_count,
-                    "error": last_error
-                }
-            
-            # Calcola backoff
-            backoff_seconds = calculate_backoff(retry_count)
-            
-            log_with_context(
-                "warning",
-                f"Retry {retry_count}/{max_retries} per notifica {notification_id} tra {backoff_seconds}s",
-                correlation_id=correlation_id,
-                notification_id=notification_id,
-                retry_count=retry_count,
-                backoff_seconds=backoff_seconds,
-                error=last_error
-            )
-            
-            # Attendi backoff (sarà gestito dal worker con next_attempt_at)
-            # Qui non aspettiamo, il worker gestirà il timing
-            raise  # Rilancia per gestione nel worker
-    
-    return {
-        "status": "failed",
-        "retry_count": retry_count,
-        "error": last_error or "Max retries reached"
-    }
-
-
-
-Logica invio messaggi Telegram per notifiche admin
-"""
-import os
-import logging
-import httpx
-from typing import Optional, Dict, Any
-from utils.logging import log_with_context
-
-logger = logging.getLogger(__name__)
-
-ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-
-
-async def send_notification(message: str, parse_mode: str = "Markdown") -> bool:
-    """
-    Invia messaggio Telegram all'admin.
-    
-    Returns:
-        True se invio riuscito, False altrimenti
-    """
-    if not ADMIN_BOT_TOKEN or not ADMIN_CHAT_ID:
-        logger.error("ADMIN_BOT_TOKEN o ADMIN_CHAT_ID non configurati")
-        return False
-    
-    try:
-        url = f"https://api.telegram.org/bot{ADMIN_BOT_TOKEN}/sendMessage"
-        
-        payload = {
-            "chat_id": int(ADMIN_CHAT_ID),
-            "text": message,
-            "parse_mode": parse_mode
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            
-            result = response.json()
-            if result.get("ok"):
-                logger.info("Notifica inviata con successo")
-                return True
-            else:
-                logger.error(f"Errore Telegram API: {result.get('description')}")
-                return False
+                elif response.status_code == 429:
+                    # Rate limit HTTP
+                    if attempt < max_retries:
+                        backoff_seconds = calculate_backoff(attempt, base=10)
+                        logger.warning(
+                            f"Rate limit HTTP per notifica {notification_id}, "
+                            f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                        continue
+                    else:
+                        error_msg = "Rate limit Telegram raggiunto dopo max retry"
+                        return {"status": "error", "error": error_msg}
                 
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            # Rate limit - sarà gestito da retry con backoff
-            logger.warning(f"Rate limit Telegram (429): {e.response.text}")
-            raise  # Rilancia per gestione retry
-        elif e.response.status_code == 400:
-            # Bad request - non retry
-            logger.error(f"Bad request Telegram (400): {e.response.text}")
-            return False
-        elif e.response.status_code == 401:
-            # Unauthorized - token invalido, ferma bot
-            logger.critical(f"Token Telegram invalido (401): {e.response.text}")
-            raise
-        else:
-            logger.error(f"Errore HTTP Telegram: {e.response.status_code} - {e.response.text}")
-            raise  # Rilancia per retry
-    
-    except Exception as e:
-        logger.error(f"Errore invio notifica Telegram: {e}")
-        raise  # Rilancia per retry
-
-
-async def send_notification_with_retry(
-    message: str,
-    notification_id: str,
-    correlation_id: Optional[str] = None,
-    max_retries: int = 10
-) -> Dict[str, Any]:
-    """
-    Invia notifica con gestione retry automatica.
-    
-    Returns:
-        Dict con status: 'sent' o 'failed', retry_count, error se presente
-    """
-    from utils.backoff import calculate_backoff
-    
-    retry_count = 0
-    last_error = None
-    
-    while retry_count < max_retries:
-        try:
-            success = await send_notification(message)
-            
-            if success:
-                log_with_context(
-                    "info",
-                    f"Notifica {notification_id} inviata con successo",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count
+                else:
+                    # Altri errori HTTP
+                    if attempt < max_retries:
+                        backoff_seconds = calculate_backoff(attempt, base=10)
+                        logger.warning(
+                            f"Errore HTTP {response.status_code} per notifica {notification_id}, "
+                            f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                        continue
+                    else:
+                        error_msg = f"HTTP error {response.status_code}: {response.text[:200]}"
+                        return {"status": "error", "error": error_msg}
+        
+        except httpx.TimeoutException:
+            if attempt < max_retries:
+                backoff_seconds = calculate_backoff(attempt, base=10)
+                logger.warning(
+                    f"Timeout invio notifica {notification_id}, "
+                    f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
                 )
-                return {
-                    "status": "sent",
-                    "retry_count": retry_count,
-                    "error": None
-                }
-            
-            # Se send_notification ritorna False (non retry), esci
-            return {
-                "status": "failed",
-                "retry_count": retry_count,
-                "error": "Telegram API returned ok=false"
-            }
-            
+                await asyncio.sleep(backoff_seconds)
+                continue
+            else:
+                error_msg = "Timeout dopo max retry"
+                return {"status": "error", "error": error_msg}
+        
         except Exception as e:
-            last_error = str(e)
-            retry_count += 1
-            
-            if retry_count >= max_retries:
-                log_with_context(
-                    "error",
-                    f"Notifica {notification_id} fallita dopo {max_retries} tentativi",
-                    correlation_id=correlation_id,
-                    notification_id=notification_id,
-                    retry_count=retry_count,
-                    error=last_error
+            if attempt < max_retries:
+                backoff_seconds = calculate_backoff(attempt, base=10)
+                logger.warning(
+                    f"Errore generico invio notifica {notification_id}: {e}, "
+                    f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})",
+                    exc_info=True
                 )
-                return {
-                    "status": "failed",
-                    "retry_count": retry_count,
-                    "error": last_error
-                }
-            
-            # Calcola backoff
-            backoff_seconds = calculate_backoff(retry_count)
-            
-            log_with_context(
-                "warning",
-                f"Retry {retry_count}/{max_retries} per notifica {notification_id} tra {backoff_seconds}s",
-                correlation_id=correlation_id,
-                notification_id=notification_id,
-                retry_count=retry_count,
-                backoff_seconds=backoff_seconds,
-                error=last_error
-            )
-            
-            # Attendi backoff (sarà gestito dal worker con next_attempt_at)
-            # Qui non aspettiamo, il worker gestirà il timing
-            raise  # Rilancia per gestione nel worker
+                await asyncio.sleep(backoff_seconds)
+                continue
+            else:
+                error_msg = f"Errore generico: {str(e)}"
+                logger.error(
+                    f"Errore definitivo invio notifica {notification_id}: {error_msg}",
+                    correlation_id=correlation_id,
+                    exc_info=True
+                )
+                return {"status": "error", "error": error_msg}
     
-    return {
-        "status": "failed",
-        "retry_count": retry_count,
-        "error": last_error or "Max retries reached"
-    }
-
-
-
-
-
-
+    # Se arriviamo qui, abbiamo esaurito i tentativi
+    error_msg = f"Max retry ({max_retries}) raggiunto per notifica {notification_id}"
+    logger.error(
+        f"Impossibile inviare notifica {notification_id} dopo {max_retries} tentativi",
+        correlation_id=correlation_id
+    )
+    return {"status": "error", "error": error_msg}
