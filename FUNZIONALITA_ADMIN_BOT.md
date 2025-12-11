@@ -219,6 +219,9 @@ ADMIN_BOT_TOKEN=8455675311:AAHkwtkB3W4o8TQ8taEilu8XQ3Z51YPvSFU
 # Chat ID admin (dove ricevere notifiche)
 ADMIN_CHAT_ID=987654321
 
+# Token bot Telegram principale (per inviare messaggi agli utenti)
+TELEGRAM_BOT_TOKEN=your_telegram_ai_bot_token_here
+
 # Database condiviso
 DATABASE_URL=postgresql://user:pass@host:port/db
 ```
