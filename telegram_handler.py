@@ -848,6 +848,22 @@ def setup_telegram_app(bot_token: str) -> Application:
     # Crea applicazione
     app = Application.builder().token(bot_token).build()
     
+    # Handler di debug per vedere TUTTI i messaggi (solo logging, non blocca)
+    async def debug_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Debug: logga tutti i messaggi ricevuti"""
+        if update.message:
+            chat_id = update.effective_chat.id if update.effective_chat else None
+            has_document = update.message.document is not None
+            has_text = update.message.text is not None
+            filename = update.message.document.file_name if update.message.document else None
+            logger.info(f"[DEBUG_ALL] Messaggio ricevuto - chat_id: {chat_id}, has_document: {has_document}, has_text: {has_text}, filename: {filename}")
+    
+    # Handler di debug per TUTTI i messaggi (bassa priorità, solo logging)
+    app.add_handler(MessageHandler(
+        filters.ALL,
+        debug_all_messages
+    ), group=-1)  # group=-1 per eseguirlo per ultimo, dopo tutti gli altri handler
+    
     # IMPORTANTE: Handler per file CSV deve essere PRIMA dei comandi per evitare conflitti
     # Handler per file CSV (documenti) - analizza ogni documento inviato nel gruppo
     app.add_handler(MessageHandler(
