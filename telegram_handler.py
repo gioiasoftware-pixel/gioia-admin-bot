@@ -37,7 +37,6 @@ async def get_all_users() -> List[Dict[str, Any]]:
         rows = await conn.fetch("""
             SELECT telegram_id, username, first_name, last_name, business_name, onboarding_completed
             FROM users
-            WHERE onboarding_completed = true
             ORDER BY telegram_id
         """)
         
