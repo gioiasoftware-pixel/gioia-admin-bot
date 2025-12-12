@@ -343,15 +343,21 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     report_date = None
     
     if len(args) > 0:
-        # Primo argomento: telegram_id o data
-        first_arg = args[0]
-        if first_arg.isdigit():
+        first_arg = args[0].lower()  # Normalizza a lowercase per confronto
+        
+        if first_arg == "all":
+            # /report all [data] - invia a tutti gli utenti
+            telegram_id = None
+            if len(args) > 1:
+                report_date = args[1]  # Secondo argomento: data
+        elif first_arg.isdigit():
+            # /report <telegram_id> [data] - invia a utente specifico
             telegram_id = int(first_arg)
             if len(args) > 1:
                 report_date = args[1]  # Secondo argomento: data
         else:
-            # Primo argomento è una data (formato YYYY-MM-DD)
-            report_date = first_arg
+            # /report <data> - invia a tutti con data specifica
+            report_date = args[0]
     
     # Mostra info prima di inviare
     if telegram_id:
