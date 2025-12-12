@@ -842,6 +842,13 @@ def setup_telegram_app(bot_token: str) -> Application:
     # Crea applicazione
     app = Application.builder().token(bot_token).build()
     
+    # IMPORTANTE: Handler per file CSV deve essere PRIMA dei comandi per evitare conflitti
+    # Handler per file CSV (documenti) - analizza ogni documento inviato nel gruppo
+    app.add_handler(MessageHandler(
+        filters.Document.ALL,
+        handle_csv_upload
+    ))
+    
     # Aggiungi handler per comandi
     app.add_handler(CommandHandler("start", start_admin_cmd))
     app.add_handler(CommandHandler("info", info_cmd))
@@ -869,13 +876,6 @@ def setup_telegram_app(bot_token: str) -> Application:
     app.add_handler(MessageHandler(
         filters.TEXT & filters.Regex(r'^/\d+(\s|$)'), 
         handle_numeric_command
-    ))
-    
-    # Handler per file CSV (documenti) - usa filtro più generico per catturare tutti i documenti
-    # Poi verifichiamo l'estensione nella funzione
-    app.add_handler(MessageHandler(
-        filters.Document.ALL,
-        handle_csv_upload
     ))
     
     logger.info("✅ Telegram bot configurato con comandi /start, /info, /users, /all, /report, /<telegram_id> e upload CSV")
