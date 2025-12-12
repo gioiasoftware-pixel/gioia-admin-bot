@@ -118,12 +118,45 @@ async def send_message_to_user(telegram_id: int, message: str) -> Dict[str, Any]
         return {"status": "error", "error": error_msg, "telegram_id": telegram_id}
 
 
+def is_authorized(update: Update) -> bool:
+    """
+    Verifica se l'utente/canale è autorizzato a usare i comandi admin.
+    
+    Supporta:
+    - Utente privato (ADMIN_CHAT_ID = telegram_id utente)
+    - Canale/Gruppo (ADMIN_CHAT_ID = chat_id canale/gruppo, negativo)
+    - Tutti i membri del canale/gruppo possono usare i comandi
+    """
+    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
+    if not admin_chat_id:
+        return False
+    
+    # Se ADMIN_CHAT_ID è negativo, è un canale/gruppo
+    try:
+        admin_chat_id_int = int(admin_chat_id)
+        is_channel_or_group = admin_chat_id_int < 0
+    except ValueError:
+        is_channel_or_group = False
+    
+    if is_channel_or_group:
+        # Verifica che il messaggio venga dal canale/gruppo configurato
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id and str(chat_id) == str(admin_chat_id):
+            # Permetti a tutti i membri del canale/gruppo di usare i comandi
+            return True
+        return False
+    else:
+        # Comportamento originale: solo l'utente admin può usare i comandi
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id and str(user_id) == str(admin_chat_id):
+            return True
+        return False
+
+
 async def all_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /all - invia messaggio a tutti gli utenti"""
-    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
-    
-    # Verifica che il comando venga da admin
-    if str(update.effective_user.id) != str(admin_chat_id):
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
         await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
         return
     
@@ -203,10 +236,8 @@ async def all_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def user_id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /<telegram_id> - invia messaggio a un utente specifico"""
-    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
-    
-    # Verifica che il comando venga da admin
-    if str(update.effective_user.id) != str(admin_chat_id):
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
         await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
         return
     
@@ -299,10 +330,8 @@ async def user_id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /report - invia report giornaliero manualmente"""
-    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
-    
-    # Verifica che il comando venga da admin
-    if str(update.effective_user.id) != str(admin_chat_id):
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
         await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
         return
     
@@ -444,10 +473,8 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_admin_cmd(update, context):
     """Comando /start per l'admin bot."""
-    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
-    
-    # Verifica che il comando venga da admin
-    if str(update.effective_user.id) != str(admin_chat_id):
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
         await update.message.reply_text("❌ Solo l'amministratore può usare questo bot.")
         return
     
