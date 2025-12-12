@@ -520,6 +520,8 @@ def setup_telegram_app(bot_token: str) -> Application:
     
     # Aggiungi handler per comandi
     app.add_handler(CommandHandler("start", start_admin_cmd))
+    app.add_handler(CommandHandler("info", info_cmd))
+    app.add_handler(CommandHandler("users", users_cmd))
     app.add_handler(CommandHandler("all", all_cmd))
     app.add_handler(CommandHandler("report", report_cmd))
     
@@ -545,6 +547,6 @@ def setup_telegram_app(bot_token: str) -> Application:
         handle_numeric_command
     ))
     
-    logger.info("✅ Telegram bot configurato con comandi /all e /<telegram_id>")
+    logger.info("✅ Telegram bot configurato con comandi /start, /info, /users, /all, /report e /<telegram_id>")
     
     return app
