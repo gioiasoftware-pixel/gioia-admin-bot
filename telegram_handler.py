@@ -4,10 +4,12 @@ Handler Telegram per admin bot
 import os
 import logging
 import httpx
+import base64
+import re
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from db import get_db_pool
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -493,6 +495,14 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  - `/report` - Report per oggi a tutti\n"
         "  - `/report 927230913` - Report per oggi a un utente\n"
         "  - `/report all 2025-12-11` - Report per il 11 dicembre a tutti\n\n"
+        "📁 **Upload Inventario:**\n"
+        "Invia un file CSV nel gruppo con formato:\n"
+        "• `BUSINESS NAME 123456789.csv`\n"
+        "• `123456789 BUSINESS NAME.csv`\n\n"
+        "Esempi:\n"
+        "• `I CASTELLI 606968856.csv`\n"
+        "• `606968856 I CASTELLI.csv`\n\n"
+        "Il bot estrae automaticamente telegram_id e business_name dal nome file.\n\n"
         "👥 **Utenti:**\n"
         "• `/users` - Mostra lista di tutti gli utenti registrati\n\n"
         "ℹ️ **Info:**\n"
@@ -500,7 +510,8 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• `/start` - Messaggio di benvenuto\n\n"
         "💡 **Note:**\n"
         "• I report includono consumi e ricavi del giorno\n"
-        "• Gli utenti devono aver completato l'onboarding per ricevere messaggi"
+        "• Gli utenti devono aver completato l'onboarding per ricevere messaggi\n"
+        "• I file CSV devono essere già puliti prima dell'upload"
     )
     
     await update.message.reply_text(help_text, parse_mode='Markdown')
@@ -595,6 +606,178 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+def parse_filename_for_upload(filename: str) -> Optional[Tuple[int, str]]:
+    """
+    Estrae telegram_id e business_name dal nome del file CSV.
+    
+    Formati supportati:
+    - "I CASTELLI 606968856.csv" -> (606968856, "I CASTELLI")
+    - "HEY RESTAURANT 927230913.csv" -> (927230913, "HEY RESTAURANT")
+    - "606968856 I CASTELLI.csv" -> (606968856, "I CASTELLI")
+    
+    Args:
+        filename: Nome del file (es. "I CASTELLI 606968856.csv")
+    
+    Returns:
+        Tuple (telegram_id, business_name) o None se non valido
+    """
+    # Rimuovi estensione
+    name_without_ext = filename.rsplit('.', 1)[0] if '.' in filename else filename
+    
+    # Cerca pattern: numero alla fine o all'inizio
+    # Pattern 1: "BUSINESS NAME 123456789"
+    match_end = re.search(r'(.+?)\s+(\d+)$', name_without_ext)
+    if match_end:
+        business_name = match_end.group(1).strip()
+        telegram_id = int(match_end.group(2))
+        return (telegram_id, business_name)
+    
+    # Pattern 2: "123456789 BUSINESS NAME"
+    match_start = re.search(r'^(\d+)\s+(.+)$', name_without_ext)
+    if match_start:
+        telegram_id = int(match_start.group(1))
+        business_name = match_start.group(2).strip()
+        return (telegram_id, business_name)
+    
+    return None
+
+
+async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Gestisce upload file CSV nel gruppo admin.
+    
+    Estrae telegram_id e business_name dal nome del file e invia al processor.
+    """
+    # Verifica autorizzazione
+    if not is_authorized(update):
+        return  # Ignora messaggi non autorizzati
+    
+    # Verifica che ci sia un documento
+    if not update.message or not update.message.document:
+        return
+    
+    document = update.message.document
+    filename = document.file_name or ""
+    
+    # Verifica che sia un file CSV
+    if not filename.lower().endswith('.csv'):
+        return
+    
+    # Estrai telegram_id e business_name dal nome file
+    parsed = parse_filename_for_upload(filename)
+    if not parsed:
+        await update.message.reply_text(
+            f"❌ **Formato nome file non valido**\n\n"
+            f"File: `{filename}`\n\n"
+            f"Formati supportati:\n"
+            f"• `BUSINESS NAME 123456789.csv`\n"
+            f"• `123456789 BUSINESS NAME.csv`\n\n"
+            f"Esempi:\n"
+            f"• `I CASTELLI 606968856.csv`\n"
+            f"• `606968856 I CASTELLI.csv`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    telegram_id, business_name = parsed
+    
+    # Notifica inizio elaborazione
+    status_msg = await update.message.reply_text(
+        f"⏳ **Elaborazione file CSV**\n\n"
+        f"📁 File: `{filename}`\n"
+        f"👤 Telegram ID: `{telegram_id}`\n"
+        f"🏢 Business: `{business_name}`\n\n"
+        f"Scaricamento file...",
+        parse_mode='Markdown'
+    )
+    
+    try:
+        # Scarica file
+        file_obj = await context.bot.get_file(document.file_id)
+        file_bytes = await file_obj.download_as_bytearray()
+        
+        logger.info(f"[CSV_UPLOAD] File scaricato: {filename}, size: {len(file_bytes)} bytes")
+        
+        # Prepara richiesta per processor
+        file_content_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        
+        json_data = {
+            'telegram_id': telegram_id,
+            'business_name': business_name,
+            'file_content_base64': file_content_b64,
+            'mode': 'add'  # Default: aggiungi, non sostituisce
+        }
+        
+        url_json = f"{PROCESSOR_API_URL}/admin/insert-inventory-json"
+        
+        logger.info(f"[CSV_UPLOAD] Invio a processor: {url_json}")
+        logger.info(f"[CSV_UPLOAD] Parametri: telegram_id={telegram_id}, business_name={business_name}")
+        
+        # Invia al processor
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(url_json, json=json_data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                saved_count = result.get('saved_wines', 0)
+                error_count = result.get('error_count', 0)
+                total_wines = result.get('total_wines', 0)
+                tables_created = result.get('tables_created', [])
+                
+                success_msg = (
+                    f"✅ **Upload Completato**\n\n"
+                    f"📁 File: `{filename}`\n"
+                    f"👤 Telegram ID: `{telegram_id}`\n"
+                    f"🏢 Business: `{business_name}`\n\n"
+                    f"📊 **Risultati:**\n"
+                    f"• Vini totali: {total_wines}\n"
+                    f"• Vini salvati: {saved_count}\n"
+                    f"• Errori: {error_count}\n"
+                )
+                
+                if tables_created:
+                    success_msg += f"\n📋 Tabelle create: {', '.join(tables_created)}"
+                
+                await status_msg.edit_text(success_msg, parse_mode='Markdown')
+                
+            elif response.status_code == 404:
+                error_msg = (
+                    f"❌ **Endpoint non disponibile**\n\n"
+                    f"L'endpoint JSON non è ancora disponibile sul processor.\n"
+                    f"Verifica che il deploy sia completato.\n\n"
+                    f"URL: `{url_json}`"
+                )
+                await status_msg.edit_text(error_msg, parse_mode='Markdown')
+                
+            else:
+                error_text = response.text[:500] if response.text else "Nessun dettaglio"
+                error_msg = (
+                    f"❌ **Errore durante l'upload**\n\n"
+                    f"HTTP {response.status_code}\n\n"
+                    f"Errore: `{error_text}`"
+                )
+                await status_msg.edit_text(error_msg, parse_mode='Markdown')
+                logger.error(f"[CSV_UPLOAD] Errore HTTP {response.status_code}: {error_text}")
+    
+    except httpx.TimeoutException:
+        error_msg = (
+            f"❌ **Timeout**\n\n"
+            f"Il processor non ha risposto in tempo.\n"
+            f"Il file potrebbe essere troppo grande o il server potrebbe essere sovraccarico."
+        )
+        await status_msg.edit_text(error_msg, parse_mode='Markdown')
+        logger.error(f"[CSV_UPLOAD] Timeout durante upload file {filename}")
+    
+    except Exception as e:
+        error_msg = (
+            f"❌ **Errore durante l'upload**\n\n"
+            f"Errore: `{str(e)[:300]}`"
+        )
+        await status_msg.edit_text(error_msg, parse_mode='Markdown')
+        logger.error(f"[CSV_UPLOAD] Errore durante upload file {filename}: {e}", exc_info=True)
+
+
 async def start_admin_cmd(update, context):
     """Comando /start per l'admin bot."""
     # Verifica autorizzazione (supporta utente privato e canale/gruppo)
@@ -610,6 +793,10 @@ async def start_admin_cmd(update, context):
         "• `/users` - Lista di tutti gli utenti registrati\n"
         "• `/all <messaggio>` - Invia messaggio a tutti\n"
         "• `/report` - Genera report giornaliero\n\n"
+        "📁 **Upload Inventario:**\n"
+        "Invia un file CSV nel gruppo con formato:\n"
+        "• `BUSINESS NAME 123456789.csv`\n"
+        "• `123456789 BUSINESS NAME.csv`\n\n"
         "💡 Usa `/info` per vedere la guida completa!"
     )
     
@@ -663,6 +850,12 @@ def setup_telegram_app(bot_token: str) -> Application:
         handle_numeric_command
     ))
     
-    logger.info("✅ Telegram bot configurato con comandi /start, /info, /users, /all, /report e /<telegram_id>")
+    # Handler per file CSV (documenti)
+    app.add_handler(MessageHandler(
+        filters.Document.FileExtension("csv"),
+        handle_csv_upload
+    ))
+    
+    logger.info("✅ Telegram bot configurato con comandi /start, /info, /users, /all, /report, /<telegram_id> e upload CSV")
     
     return app
