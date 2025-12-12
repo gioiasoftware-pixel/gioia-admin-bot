@@ -648,19 +648,26 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     Estrae telegram_id e business_name dal nome del file e invia al processor.
     """
+    logger.info(f"[CSV_UPLOAD] Ricevuto update: message={update.message is not None}, document={update.message.document if update.message else None}")
+    
     # Verifica autorizzazione
     if not is_authorized(update):
+        logger.info("[CSV_UPLOAD] Messaggio non autorizzato, ignorato")
         return  # Ignora messaggi non autorizzati
     
     # Verifica che ci sia un documento
     if not update.message or not update.message.document:
+        logger.info("[CSV_UPLOAD] Nessun documento nel messaggio")
         return
     
     document = update.message.document
     filename = document.file_name or ""
     
+    logger.info(f"[CSV_UPLOAD] File ricevuto: {filename}, mime_type: {document.mime_type}")
+    
     # Verifica che sia un file CSV
     if not filename.lower().endswith('.csv'):
+        logger.info(f"[CSV_UPLOAD] File non CSV ignorato: {filename}")
         return
     
     # Estrai telegram_id e business_name dal nome file
