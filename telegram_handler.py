@@ -471,6 +471,131 @@ async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /info - mostra tutti i comandi disponibili"""
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
+        await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
+        return
+    
+    help_text = (
+        "🤖 **Gioia Admin Bot - Comandi Disponibili**\n\n"
+        "📢 **Invio Messaggi:**\n"
+        "• `/all <messaggio>` - Invia messaggio a tutti gli utenti\n"
+        "  Esempio: `/all Ciao a tutti! Questo è un messaggio di test.`\n\n"
+        "• `/<telegram_id> <messaggio>` - Invia messaggio a un utente specifico\n"
+        "  Esempio: `/927230913 Ciao, questo è un messaggio personalizzato`\n\n"
+        "📊 **Report:**\n"
+        "• `/report` - Genera report giornaliero per oggi a tutti gli utenti\n"
+        "• `/report <telegram_id>` - Genera report per oggi a un utente specifico\n"
+        "• `/report all <data>` - Genera report per una data specifica a tutti\n"
+        "  Formato data: YYYY-MM-DD (es. 2025-12-11)\n"
+        "  Esempi:\n"
+        "  - `/report` - Report per oggi a tutti\n"
+        "  - `/report 927230913` - Report per oggi a un utente\n"
+        "  - `/report all 2025-12-11` - Report per il 11 dicembre a tutti\n\n"
+        "👥 **Utenti:**\n"
+        "• `/users` - Mostra lista di tutti gli utenti registrati\n\n"
+        "ℹ️ **Info:**\n"
+        "• `/info` - Mostra questo messaggio di aiuto\n"
+        "• `/start` - Messaggio di benvenuto\n\n"
+        "💡 **Note:**\n"
+        "• I report includono consumi e ricavi del giorno\n"
+        "• Gli utenti devono aver completato l'onboarding per ricevere messaggi"
+    )
+    
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+
+async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /users - mostra lista di tutti gli utenti registrati"""
+    # Verifica autorizzazione (supporta utente privato e canale/gruppo)
+    if not is_authorized(update):
+        await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
+        return
+    
+    try:
+        users = await get_all_users()
+        
+        if not users:
+            await update.message.reply_text(
+                "📋 **Nessun utente trovato**\n\n"
+                "Non ci sono utenti registrati nel database."
+            )
+            return
+        
+        # Formatta lista utenti
+        message_parts = [f"👥 **Lista Utenti ({len(users)} totali)**\n"]
+        
+        # Limita a 50 utenti per messaggio (Telegram ha limite di 4096 caratteri)
+        users_to_show = users[:50]
+        
+        for i, user in enumerate(users_to_show, 1):
+            telegram_id = user.get("telegram_id", "N/A")
+            username = user.get("username")
+            first_name = user.get("first_name", "")
+            last_name = user.get("last_name", "")
+            business_name = user.get("business_name", "N/A")
+            onboarding_completed = user.get("onboarding_completed", False)
+            
+            # Costruisci nome completo
+            name_parts = []
+            if first_name:
+                name_parts.append(first_name)
+            if last_name:
+                name_parts.append(last_name)
+            full_name = " ".join(name_parts) if name_parts else "N/A"
+            
+            # Emoji stato onboarding
+            status_emoji = "✅" if onboarding_completed else "⏳"
+            
+            # Formatta riga utente
+            user_line = (
+                f"{i}. {status_emoji} **ID:** `{telegram_id}`\n"
+                f"   👤 **Nome:** {full_name}\n"
+            )
+            
+            if username:
+                user_line += f"   📱 **Username:** @{username}\n"
+            
+            user_line += f"   🏢 **Business:** {business_name}\n"
+            
+            message_parts.append(user_line)
+        
+        # Se ci sono più di 50 utenti, aggiungi nota
+        if len(users) > 50:
+            message_parts.append(f"\n... e altri {len(users) - 50} utenti")
+        
+        # Unisci tutte le parti
+        full_message = "\n".join(message_parts)
+        
+        # Telegram ha limite di 4096 caratteri per messaggio
+        # Se il messaggio è troppo lungo, dividilo in più messaggi
+        max_length = 4000  # Lascia margine per formattazione
+        if len(full_message) <= max_length:
+            await update.message.reply_text(full_message, parse_mode='Markdown')
+        else:
+            # Dividi in più messaggi
+            current_message = message_parts[0] + "\n"
+            for part in message_parts[1:]:
+                if len(current_message) + len(part) + 1 > max_length:
+                    await update.message.reply_text(current_message, parse_mode='Markdown')
+                    current_message = part + "\n"
+                else:
+                    current_message += part + "\n"
+            
+            # Invia ultimo messaggio
+            if current_message.strip():
+                await update.message.reply_text(current_message, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Errore recupero lista utenti: {e}", exc_info=True)
+        await update.message.reply_text(
+            f"❌ **Errore durante il recupero degli utenti**\n\n"
+            f"Errore: {str(e)[:200]}"
+        )
+
+
 async def start_admin_cmd(update, context):
     """Comando /start per l'admin bot."""
     # Verifica autorizzazione (supporta utente privato e canale/gruppo)
@@ -478,26 +603,18 @@ async def start_admin_cmd(update, context):
         await update.message.reply_text("❌ Solo l'amministratore può usare questo bot.")
         return
     
-    help_text = (
+    welcome_text = (
         "🤖 **Gioia Admin Bot**\n\n"
-        "**Comandi disponibili:**\n\n"
-        "📢 **Invio Messaggi:**\n"
-        "• `/all <messaggio>` - Invia messaggio a tutti gli utenti\n"
-        "• `/<telegram_id> <messaggio>` - Invia messaggio a un utente specifico\n\n"
-        "📊 **Report Giornaliero:**\n"
-        "• `/report` - Invia report a tutti gli utenti (data: ieri)\n"
-        "• `/report <telegram_id>` - Invia report a un utente specifico (data: ieri)\n"
-        "• `/report <telegram_id> <data>` - Invia report a un utente per una data (formato: YYYY-MM-DD)\n\n"
-        "**Esempi:**\n"
-        "• `/all Ciao a tutti! Questo è un messaggio di test.`\n"
-        "• `/927230913 Ciao! Questo è un messaggio per te.`\n"
-        "• `/report` - Report a tutti per ieri\n"
-        "• `/report 927230913` - Report a utente specifico per ieri\n"
-        "• `/report 927230913 2025-12-10` - Report a utente per data specifica\n\n"
-        "💡 Riceverai qui le notifiche automatiche del sistema."
+        "Benvenuto! Questo bot ti permette di gestire gli utenti e generare report.\n\n"
+        "📋 **Comandi principali:**\n"
+        "• `/info` - Mostra tutti i comandi disponibili\n"
+        "• `/users` - Lista di tutti gli utenti registrati\n"
+        "• `/all <messaggio>` - Invia messaggio a tutti\n"
+        "• `/report` - Genera report giornaliero\n\n"
+        "💡 Usa `/info` per vedere la guida completa!"
     )
     
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+    await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
 
 def setup_telegram_app(bot_token: str) -> Application:
