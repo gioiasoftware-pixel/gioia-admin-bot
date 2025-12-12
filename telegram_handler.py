@@ -649,14 +649,20 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Analizza ogni messaggio nel gruppo. Se è un file CSV con nome valido (contiene telegram_id e business_name),
     lo scarica e lo invia al processor per upload e creazione tabelle.
     """
-    # Log per debug
+    # Log per debug - logga SEMPRE per vedere se riceve update
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
-    logger.info(f"[CSV_UPLOAD] Update ricevuto - chat_id: {chat_id}, user_id: {user_id}, message: {update.message is not None}")
+    admin_chat_id = os.getenv('ADMIN_CHAT_ID')
+    
+    logger.info(f"[CSV_UPLOAD] Update ricevuto - chat_id: {chat_id}, user_id: {user_id}, message: {update.message is not None}, document: {update.message.document if update.message else None}")
+    logger.info(f"[CSV_UPLOAD] ADMIN_CHAT_ID configurato: {admin_chat_id}")
     
     # Verifica autorizzazione (deve essere nel gruppo admin configurato)
-    if not is_authorized(update):
-        logger.info(f"[CSV_UPLOAD] Messaggio non autorizzato - chat_id: {chat_id}, ADMIN_CHAT_ID: {os.getenv('ADMIN_CHAT_ID')}")
+    authorized = is_authorized(update)
+    logger.info(f"[CSV_UPLOAD] Autorizzazione: {authorized} (chat_id match: {str(chat_id) == str(admin_chat_id)})")
+    
+    if not authorized:
+        logger.warning(f"[CSV_UPLOAD] Messaggio non autorizzato - chat_id: {chat_id}, ADMIN_CHAT_ID: {admin_chat_id}")
         return  # Ignora messaggi non autorizzati
     
     # Verifica che ci sia un messaggio con documento
