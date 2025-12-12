@@ -646,24 +646,32 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Gestisce upload file CSV nel gruppo admin.
     
-    Estrae telegram_id e business_name dal nome del file e invia al processor.
+    Analizza ogni messaggio nel gruppo. Se è un file CSV con nome valido (contiene telegram_id e business_name),
+    lo scarica e lo invia al processor per upload e creazione tabelle.
     """
-    logger.info(f"[CSV_UPLOAD] Ricevuto update: message={update.message is not None}, document={update.message.document if update.message else None}")
+    # Log per debug
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    logger.info(f"[CSV_UPLOAD] Update ricevuto - chat_id: {chat_id}, user_id: {user_id}, message: {update.message is not None}")
     
-    # Verifica autorizzazione
+    # Verifica autorizzazione (deve essere nel gruppo admin configurato)
     if not is_authorized(update):
-        logger.info("[CSV_UPLOAD] Messaggio non autorizzato, ignorato")
+        logger.info(f"[CSV_UPLOAD] Messaggio non autorizzato - chat_id: {chat_id}, ADMIN_CHAT_ID: {os.getenv('ADMIN_CHAT_ID')}")
         return  # Ignora messaggi non autorizzati
     
-    # Verifica che ci sia un documento
-    if not update.message or not update.message.document:
+    # Verifica che ci sia un messaggio con documento
+    if not update.message:
+        logger.info("[CSV_UPLOAD] Nessun messaggio nell'update")
+        return
+    
+    if not update.message.document:
         logger.info("[CSV_UPLOAD] Nessun documento nel messaggio")
         return
     
     document = update.message.document
     filename = document.file_name or ""
     
-    logger.info(f"[CSV_UPLOAD] File ricevuto: {filename}, mime_type: {document.mime_type}")
+    logger.info(f"[CSV_UPLOAD] File ricevuto: {filename}, mime_type: {document.mime_type}, file_id: {document.file_id}")
     
     # Verifica che sia un file CSV
     if not filename.lower().endswith('.csv'):
@@ -671,9 +679,10 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Estrai telegram_id e business_name dal nome file
+    logger.info(f"[CSV_UPLOAD] Parsing nome file: {filename}")
     parsed = parse_filename_for_upload(filename)
     if not parsed:
-        await update.message.reply_text(
+        error_msg = (
             f"❌ **Formato nome file non valido**\n\n"
             f"File: `{filename}`\n\n"
             f"Formati supportati:\n"
@@ -681,14 +690,17 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• `123456789 BUSINESS NAME.csv`\n\n"
             f"Esempi:\n"
             f"• `I CASTELLI 606968856.csv`\n"
-            f"• `606968856 I CASTELLI.csv`",
-            parse_mode='Markdown'
+            f"• `606968856 I CASTELLI.csv`"
         )
+        logger.warning(f"[CSV_UPLOAD] Formato nome file non valido: {filename}")
+        await update.message.reply_text(error_msg, parse_mode='Markdown')
         return
     
     telegram_id, business_name = parsed
+    logger.info(f"[CSV_UPLOAD] Parsing completato - telegram_id: {telegram_id}, business_name: {business_name}")
     
     # Notifica inizio elaborazione
+    logger.info(f"[CSV_UPLOAD] Inizio elaborazione file: {filename}")
     status_msg = await update.message.reply_text(
         f"⏳ **Elaborazione file CSV**\n\n"
         f"📁 File: `{filename}`\n"
@@ -700,10 +712,11 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Scarica file
+        logger.info(f"[CSV_UPLOAD] Download file da Telegram - file_id: {document.file_id}")
         file_obj = await context.bot.get_file(document.file_id)
         file_bytes = await file_obj.download_as_bytearray()
         
-        logger.info(f"[CSV_UPLOAD] File scaricato: {filename}, size: {len(file_bytes)} bytes")
+        logger.info(f"[CSV_UPLOAD] File scaricato con successo: {filename}, size: {len(file_bytes)} bytes")
         
         # Prepara richiesta per processor
         file_content_b64 = base64.b64encode(file_bytes).decode('utf-8')
@@ -858,9 +871,10 @@ def setup_telegram_app(bot_token: str) -> Application:
         handle_numeric_command
     ))
     
-    # Handler per file CSV (documenti)
+    # Handler per file CSV (documenti) - usa filtro più generico per catturare tutti i documenti
+    # Poi verifichiamo l'estensione nella funzione
     app.add_handler(MessageHandler(
-        filters.Document.FileExtension("csv"),
+        filters.Document.ALL,
         handle_csv_upload
     ))
     
