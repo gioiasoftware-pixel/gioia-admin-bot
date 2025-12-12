@@ -111,17 +111,36 @@ async def main():
         # Setup Telegram bot per comandi
         telegram_app = setup_telegram_app(admin_bot_token)
         
-        # Rimuovi eventuali webhook configurati prima di avviare polling
-        try:
-            await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-            logger.info("✅ Eventuali webhook rimossi")
-        except Exception as webhook_error:
-            logger.warning(f"⚠️ Errore rimozione webhook (potrebbe non essere configurato): {webhook_error}")
-        
-        # Avvia polling Telegram in background
+        # Inizializza bot prima di rimuovere webhook
         await telegram_app.initialize()
         await telegram_app.start()
-        await telegram_app.updater.start_polling(drop_pending_updates=True)
+        
+        # Rimuovi eventuali webhook configurati prima di avviare polling
+        # Fai più tentativi per assicurarsi che il webhook sia rimosso
+        max_webhook_retries = 3
+        for attempt in range(max_webhook_retries):
+            try:
+                webhook_info = await telegram_app.bot.get_webhook_info()
+                logger.info(f"[WEBHOOK_CHECK] Tentativo {attempt + 1}: webhook_url={webhook_info.url}, pending_updates={webhook_info.pending_update_count}")
+                
+                if webhook_info.url:
+                    await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+                    logger.info(f"✅ Webhook rimosso: {webhook_info.url}")
+                    # Aspetta un po' per assicurarsi che la rimozione sia completata
+                    await asyncio.sleep(2)
+                else:
+                    logger.info("✅ Nessun webhook configurato")
+                    break
+            except Exception as webhook_error:
+                logger.warning(f"⚠️ Errore rimozione webhook (tentativo {attempt + 1}): {webhook_error}")
+                if attempt < max_webhook_retries - 1:
+                    await asyncio.sleep(2)
+        
+        # Avvia polling Telegram in background
+        await telegram_app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"]  # Specifica solo gli update che ci interessano
+        )
         logger.info("✅ Telegram bot polling avviato")
         
         # Avvia worker in background
