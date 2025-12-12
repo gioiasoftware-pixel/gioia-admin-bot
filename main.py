@@ -111,6 +111,13 @@ async def main():
         # Setup Telegram bot per comandi
         telegram_app = setup_telegram_app(admin_bot_token)
         
+        # Rimuovi eventuali webhook configurati prima di avviare polling
+        try:
+            await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("✅ Eventuali webhook rimossi")
+        except Exception as webhook_error:
+            logger.warning(f"⚠️ Errore rimozione webhook (potrebbe non essere configurato): {webhook_error}")
+        
         # Avvia polling Telegram in background
         await telegram_app.initialize()
         await telegram_app.start()
