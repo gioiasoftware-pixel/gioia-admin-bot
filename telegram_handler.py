@@ -496,13 +496,15 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  - `/report 927230913` - Report per oggi a un utente\n"
         "  - `/report all 2025-12-11` - Report per il 11 dicembre a tutti\n\n"
         "📁 **Upload Inventario:**\n"
-        "Invia un file CSV nel gruppo con formato:\n"
-        "• `BUSINESS NAME 123456789.csv`\n"
-        "• `123456789 BUSINESS NAME.csv`\n\n"
-        "Esempi:\n"
-        "• `I CASTELLI 606968856.csv`\n"
-        "• `606968856 I CASTELLI.csv`\n\n"
-        "Il bot estrae automaticamente telegram_id e business_name dal nome file.\n\n"
+        "• `/upload` - Carica file CSV inventario\n"
+        "  Invia un file CSV con `/upload` come caption.\n"
+        "  Formato nome file:\n"
+        "  • `BUSINESS NAME 123456789.csv`\n"
+        "  • `123456789 BUSINESS NAME.csv`\n\n"
+        "  Esempi:\n"
+        "  • `I CASTELLI 606968856.csv`\n"
+        "  • `606968856 I CASTELLI.csv`\n\n"
+        "  Il bot estrae automaticamente telegram_id e business_name dal nome file.\n\n"
         "👥 **Utenti:**\n"
         "• `/users` - Mostra lista di tutti gli utenti registrati\n\n"
         "ℹ️ **Info:**\n"
@@ -640,6 +642,39 @@ def parse_filename_for_upload(filename: str) -> Optional[Tuple[int, str]]:
         return (telegram_id, business_name)
     
     return None
+
+
+async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Comando /upload - gestisce upload file CSV con caption /upload.
+    
+    Se il messaggio ha un documento allegato, lo processa come CSV.
+    Altrimenti, chiede all'utente di inviare il file con /upload come caption.
+    """
+    # Verifica autorizzazione
+    if not is_authorized(update):
+        await update.message.reply_text("❌ Solo l'amministratore può usare questo comando.")
+        return
+    
+    # Verifica che ci sia un documento nel messaggio
+    if not update.message or not update.message.document:
+        await update.message.reply_text(
+            "📁 **Upload Inventario CSV**\n\n"
+            "Invia un file CSV con `/upload` come caption.\n\n"
+            "**Formato nome file:**\n"
+            "• `BUSINESS NAME 123456789.csv`\n"
+            "• `123456789 BUSINESS NAME.csv`\n\n"
+            "**Esempi:**\n"
+            "• `I CASTELLI 606968856.csv`\n"
+            "• `606968856 I CASTELLI.csv`\n\n"
+            "Il bot estrae automaticamente telegram_id e business_name dal nome file.",
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Se c'è un documento, processalo come CSV
+    logger.info(f"[UPLOAD_CMD] Comando /upload ricevuto con documento")
+    await handle_csv_upload(update, context)
 
 
 async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -821,7 +856,8 @@ async def start_admin_cmd(update, context):
         "• `/all <messaggio>` - Invia messaggio a tutti\n"
         "• `/report` - Genera report giornaliero\n\n"
         "📁 **Upload Inventario:**\n"
-        "Invia un file CSV nel gruppo con formato:\n"
+        "Invia un file CSV con `/upload` come caption.\n"
+        "Formato nome file:\n"
         "• `BUSINESS NAME 123456789.csv`\n"
         "• `123456789 BUSINESS NAME.csv`\n\n"
         "💡 Usa `/info` per vedere la guida completa!"
@@ -877,6 +913,7 @@ def setup_telegram_app(bot_token: str) -> Application:
     app.add_handler(CommandHandler("users", users_cmd))
     app.add_handler(CommandHandler("all", all_cmd))
     app.add_handler(CommandHandler("report", report_cmd))
+    app.add_handler(CommandHandler("upload", upload_cmd))  # Comando /upload per file CSV
     
     # Handler per comandi numerici (telegram_id) - cattura messaggi che iniziano con / seguito da solo numeri
     async def handle_numeric_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
