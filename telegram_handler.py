@@ -705,7 +705,8 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'telegram_id': telegram_id,
             'business_name': business_name,
             'file_content_base64': file_content_b64,
-            'mode': 'add'  # Default: aggiungi, non sostituisce
+            'mode': 'add',  # Default: aggiungi, non sostituisce
+            'source': 'admin_bot'  # Indica che arriva dall'admin bot
         }
         
         url_json = f"{PROCESSOR_API_URL}/admin/insert-inventory-json"
