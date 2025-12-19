@@ -810,10 +810,14 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total_wines = result.get('total_wines', 0)
                 tables_created = result.get('tables_created', [])
                 
+                user_id = result.get('user_id', 'N/A')
+                telegram_id_display = telegram_id if telegram_id else 'N/A (nuovo utente)'
+                
                 success_msg = (
                     f"✅ **Upload Completato**\n\n"
                     f"📁 File: `{filename}`\n"
-                    f"👤 Telegram ID: `{telegram_id}`\n"
+                    f"👤 User ID: `{user_id}`\n"
+                    f"📱 Telegram ID: `{telegram_id_display}`\n"
                     f"🏢 Business: `{business_name}`\n\n"
                     f"📊 **Risultati:**\n"
                     f"• Vini totali: {total_wines}\n"
