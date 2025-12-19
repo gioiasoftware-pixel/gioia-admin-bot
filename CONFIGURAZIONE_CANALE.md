@@ -107,3 +107,4 @@ Se vuoi tornare alla modalità originale (solo utente admin):
 - Usa un bot helper come `@userinfobot` o `@getidsbot`
 - Oppure controlla i log del bot quando invii un messaggio nel canale
 
+

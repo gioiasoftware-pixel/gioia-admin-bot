@@ -77,7 +77,7 @@ async def send_notification_with_retry(
                         if "429" in error_desc or response.status_code == 429:
                             # Rate limit - retry con backoff
                             if attempt < max_retries:
-                                backoff_seconds = calculate_backoff(attempt, base=10)
+                                backoff_seconds = calculate_backoff(attempt, base_seconds=10)
                                 logger.warning(
                                     f"Rate limit Telegram per notifica {notification_id}, "
                                     f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
@@ -106,7 +106,7 @@ async def send_notification_with_retry(
                         else:
                             # Altri errori - retry
                             if attempt < max_retries:
-                                backoff_seconds = calculate_backoff(attempt, base=10)
+                                backoff_seconds = calculate_backoff(attempt, base_seconds=10)
                                 logger.warning(
                                     f"Errore Telegram per notifica {notification_id}: {error_desc}, "
                                     f"retry dopo {backoff_seconds}s (tentativo {attempt + 1}/{max_retries})"
