@@ -506,11 +506,14 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  Invia un file CSV con `/upload` come caption.\n"
         "  Formato nome file:\n"
         "  • `BUSINESS NAME 123456789.csv`\n"
-        "  • `123456789 BUSINESS NAME.csv`\n\n"
+        "  • `123456789 BUSINESS NAME.csv`\n"
+        "  • `BUSINESS NAME.csv` (solo business_name)\n\n"
         "  Esempi:\n"
         "  • `I CASTELLI 606968856.csv`\n"
-        "  • `606968856 I CASTELLI.csv`\n\n"
-        "  Il bot estrae automaticamente telegram_id e business_name dal nome file.\n\n"
+        "  • `606968856 I CASTELLI.csv`\n"
+        "  • `I CASTELLI.csv` (solo business_name)\n\n"
+        "  Il bot estrae automaticamente telegram_id (se presente) e business_name dal nome file.\n"
+        "  Se non c'è telegram_id, viene creato un utente solo con business_name.\n\n"
         "👥 **Utenti:**\n"
         "• `/users` - Mostra lista di tutti gli utenti registrati\n\n"
         "ℹ️ **Info:**\n"
@@ -614,20 +617,21 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-def parse_filename_for_upload(filename: str) -> Optional[Tuple[int, str]]:
+def parse_filename_for_upload(filename: str) -> Optional[Tuple[Optional[int], str]]:
     """
-    Estrae telegram_id e business_name dal nome del file CSV.
+    Estrae telegram_id (opzionale) e business_name dal nome del file CSV.
     
     Formati supportati:
     - "I CASTELLI 606968856.csv" -> (606968856, "I CASTELLI")
     - "HEY RESTAURANT 927230913.csv" -> (927230913, "HEY RESTAURANT")
     - "606968856 I CASTELLI.csv" -> (606968856, "I CASTELLI")
+    - "I CASTELLI.csv" -> (None, "I CASTELLI")  # NUOVO: solo business_name
     
     Args:
-        filename: Nome del file (es. "I CASTELLI 606968856.csv")
+        filename: Nome del file (es. "I CASTELLI 606968856.csv" o "I CASTELLI.csv")
     
     Returns:
-        Tuple (telegram_id, business_name) o None se non valido
+        Tuple (telegram_id, business_name) dove telegram_id può essere None
     """
     # Rimuovi estensione
     name_without_ext = filename.rsplit('.', 1)[0] if '.' in filename else filename
@@ -646,6 +650,14 @@ def parse_filename_for_upload(filename: str) -> Optional[Tuple[int, str]]:
         telegram_id = int(match_start.group(1))
         business_name = match_start.group(2).strip()
         return (telegram_id, business_name)
+    
+    # Pattern 3: Solo business_name (senza telegram_id) - NUOVO
+    # Se non c'è un numero nel nome, assume che sia solo business_name
+    if name_without_ext.strip():
+        business_name = name_without_ext.strip()
+        # Verifica che non sia solo un numero
+        if not business_name.isdigit():
+            return (None, business_name)
     
     return None
 
@@ -725,7 +737,7 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"[CSV_UPLOAD] File non CSV ignorato: {filename}")
         return
     
-    # Estrai telegram_id e business_name dal nome file
+    # Estrai telegram_id (opzionale) e business_name dal nome file
     logger.info(f"[CSV_UPLOAD] Parsing nome file: {filename}")
     parsed = parse_filename_for_upload(filename)
     if not parsed:
@@ -734,17 +746,19 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"File: `{filename}`\n\n"
             f"Formati supportati:\n"
             f"• `BUSINESS NAME 123456789.csv`\n"
-            f"• `123456789 BUSINESS NAME.csv`\n\n"
+            f"• `123456789 BUSINESS NAME.csv`\n"
+            f"• `BUSINESS NAME.csv` (solo business_name)\n\n"
             f"Esempi:\n"
             f"• `I CASTELLI 606968856.csv`\n"
-            f"• `606968856 I CASTELLI.csv`"
+            f"• `606968856 I CASTELLI.csv`\n"
+            f"• `I CASTELLI.csv` (solo business_name)"
         )
         logger.warning(f"[CSV_UPLOAD] Formato nome file non valido: {filename}")
         await update.message.reply_text(error_msg, parse_mode='Markdown')
         return
     
     telegram_id, business_name = parsed
-    logger.info(f"[CSV_UPLOAD] Parsing completato - telegram_id: {telegram_id}, business_name: {business_name}")
+    logger.info(f"[CSV_UPLOAD] Parsing completato - telegram_id: {telegram_id or 'N/A'}, business_name: {business_name}")
     
     # Notifica inizio elaborazione
     logger.info(f"[CSV_UPLOAD] Inizio elaborazione file: {filename}")
@@ -769,17 +783,20 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_content_b64 = base64.b64encode(file_bytes).decode('utf-8')
         
         json_data = {
-            'telegram_id': telegram_id,
             'business_name': business_name,
             'file_content_base64': file_content_b64,
             'mode': 'add',  # Default: aggiungi, non sostituisce
             'source': 'admin_bot'  # Indica che arriva dall'admin bot
         }
         
+        # Aggiungi telegram_id solo se presente
+        if telegram_id:
+            json_data['telegram_id'] = telegram_id
+        
         url_json = f"{PROCESSOR_API_URL}/admin/insert-inventory-json"
         
         logger.info(f"[CSV_UPLOAD] Invio a processor: {url_json}")
-        logger.info(f"[CSV_UPLOAD] Parametri: telegram_id={telegram_id}, business_name={business_name}")
+        logger.info(f"[CSV_UPLOAD] Parametri: telegram_id={telegram_id or 'N/A'}, business_name={business_name}")
         
         # Invia al processor
         async with httpx.AsyncClient(timeout=120.0) as client:
